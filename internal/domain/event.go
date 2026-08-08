@@ -18,6 +18,14 @@ const (
 	EventVerificationPassed     = "VerificationPassed"
 	EventVerificationFailed     = "VerificationFailed"
 	EventEffectCommitted        = "EffectCommitted"
+	EventCompensationStaged     = "CompensationStaged"
+	EventCompensationStarted    = "CompensationExecutionStarted"
+	EventCompensationExecuted   = "CompensationExecuted"
+	EventCompensationAmbiguous  = "CompensationAmbiguous"
+	EventCompensationEvidence   = "CompensationEvidenceRecorded"
+	EventCompensationVerified   = "CompensationVerificationPassed"
+	EventCompensationFailed     = "CompensationVerificationFailed"
+	EventEffectCompensated      = "EffectCompensated"
 )
 
 type Event struct {

@@ -208,7 +208,10 @@ func TestMigrationFromVersionOnePreservesContract(t *testing.T) {
 	if err := store.CreateContract(ctx, contract); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"verifications", "evidence", "effects", "artifacts", "capability_grants", "plans"} {
+	for _, table := range []string{
+		"compensation_verifications", "compensation_evidence", "compensations",
+		"verifications", "evidence", "effects", "artifacts", "capability_grants", "plans",
+	} {
 		if _, err := store.db.ExecContext(ctx, `DROP TABLE `+table); err != nil {
 			t.Fatalf("drop post-v1 table %s: %v", table, err)
 		}

@@ -3160,9 +3160,9 @@ These are implementation defaults, not immutable constitutional rules.
 Implemented foundation as of 2026 08 08:
 
 ```text
-Go module with SQLite schema migrations through version 3
+Go module with SQLite schema migrations through version 4
 
-Durable Contract, Run, PlanIR, CapabilityGrant, Effect, Artifact, Evidence, and Verification records
+Durable Contract, Run, PlanIR, CapabilityGrant, Effect, Artifact, Evidence, Verification, and Compensation records
 
 Atomic aggregate and event persistence
 
@@ -3174,9 +3174,11 @@ Durable pre-mutation Executing state and idempotent ambiguous-outcome reconcilia
 
 Independent filesystem read-back Verification before Effect Commit
 
-Bounded manual recovery scan for durable Executing file Effects
+Durable file Compensation with independently verified restore or removal
 
-Contract-level success evaluation, Run completion, compensation execution, automatic startup recovery, and TUI remain unimplemented
+Bounded manual recovery scan for durable Executing file Effects and Compensations
+
+Contract-level success evaluation, Run completion, automatic startup recovery, and TUI remain unimplemented
 ```
 
 # 104. Known Architectural Debt
@@ -3284,6 +3286,22 @@ The local file Effect test suite forces Evidence persistence to fail after the f
 
 Impact:
 Future Effect implementations must persist intent before mutation, reconcile observed state after ambiguous outcomes, bind mutation to a scoped Run and Worker capability, and keep Verification separate from executor success.
+
+Status:
+Active
+```
+
+```text
+2026 08 08
+
+Change:
+Established Compensation as a durable execution lifecycle separate from the original Effect, with explicit capability, executor Evidence, independent Verification, and immutable Effect history.
+
+Evidence:
+The file Compensation suite proves restoration and removal, idempotent retry, post-effect drift refusal, cancellation, expired-grant read-only reconciliation, recovery after Evidence persistence failure, verifier rejection of later drift, and restart recovery. The CLI exercises the same path through azper undo.
+
+Impact:
+Future compensation mechanisms must reproduce staged state rather than invent inverse prompts, refuse to overwrite unrecognized state, retain the original Effect record, and require independent Verification before reporting Compensated.
 
 Status:
 Active

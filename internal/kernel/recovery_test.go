@@ -123,3 +123,46 @@ func TestRecoveryWithNoExecutingEffectsIsEmpty(t *testing.T) {
 		t.Fatalf("unexpected report: %#v", report)
 	}
 }
+
+func TestRecoveryVerifiesAlreadyAppliedCompensationAfterRestart(t *testing.T) {
+	h := newFileHarness(t, stringPointer("before"))
+	effect := commitHarnessEffect(t, h)
+	engine, _, grant := newCompensationHarness(t, h)
+	compensation, _, err := engine.Stage(context.Background(), effect.ID, grant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.BeginCompensationExecution(context.Background(), compensation.ID, h.now.Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(h.target, []byte("before"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	h.close(t)
+
+	store, err := sqlite.Open(context.Background(), h.dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	recovery, err := NewRecoveryEngine(store, "compensator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovery.compensationExecutor.now = func() time.Time { return h.now.Add(3 * time.Hour) }
+	recovery.compensationVerifier.now = func() time.Time { return h.now.Add(3*time.Hour + time.Minute) }
+	report, err := recovery.Recover(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Inspected != 1 || report.Compensated != 1 || report.NeedsAttention != 0 {
+		t.Fatalf("unexpected compensation recovery report: %#v", report)
+	}
+	persisted, err := store.Compensation(context.Background(), compensation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Status != domain.CompensationCompensated {
+		t.Fatalf("recovered compensation status = %s", persisted.Status)
+	}
+}

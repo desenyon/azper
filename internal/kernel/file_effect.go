@@ -299,6 +299,21 @@ func (v *FileVerifier) Verify(ctx context.Context, effectID string) (domain.Effe
 		if len(verifications) == 0 {
 			return domain.Effect{}, domain.Verification{}, fault.New(op, fault.Internal, errors.New("committed effect has no verification"))
 		}
+		grant, err := v.store.CapabilityGrant(ctx, effect.CapabilityGrantID)
+		if err != nil {
+			return domain.Effect{}, domain.Verification{}, err
+		}
+		target, err := resolveScopedTarget(grant.Scope, effect.Target)
+		if err != nil || target != effect.Target {
+			return domain.Effect{}, domain.Verification{}, fault.New(op, fault.Conflict, errors.New("committed effect target no longer resolves within its recorded scope"))
+		}
+		observed, exists, err := observeFile(effect.Target, v.maxFileBytes)
+		if err != nil {
+			return domain.Effect{}, domain.Verification{}, fault.New(op, fault.Internal, fmt.Errorf("recheck committed target: %w", err))
+		}
+		if !exists || observed == nil || observed.ID != effect.DesiredArtifactID {
+			return effect, verifications[len(verifications)-1], fault.New(op, fault.Conflict, errors.New("committed target has drifted since verification"))
+		}
 		return effect, verifications[len(verifications)-1], nil
 	}
 	if effect.Status != domain.EffectExecuted {
@@ -467,7 +482,11 @@ func atomicWrite(ctx context.Context, target string, content []byte) error {
 	if err := os.Rename(temporaryPath, target); err != nil {
 		return fmt.Errorf("replace target atomically: %w", err)
 	}
-	directoryHandle, err := os.Open(directory)
+	return syncDirectory(target)
+}
+
+func syncDirectory(target string) error {
+	directoryHandle, err := os.Open(filepath.Dir(target))
 	if err != nil {
 		return fmt.Errorf("open target directory for sync: %w", err)
 	}

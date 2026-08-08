@@ -18,7 +18,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 type migration struct {
 	version    int
@@ -126,6 +126,42 @@ var schemaMigrations = []migration{
 				observed_at_unix_nano INTEGER NOT NULL
 			) STRICT`,
 			`CREATE INDEX verifications_effect_id_idx ON verifications(effect_id)`,
+		},
+	},
+	{
+		version: 4,
+		statements: []string{
+			`CREATE TABLE compensations (
+				id TEXT PRIMARY KEY,
+				effect_id TEXT NOT NULL UNIQUE REFERENCES effects(id),
+				capability_grant_id TEXT NOT NULL REFERENCES capability_grants(id),
+				status TEXT NOT NULL CHECK (status IN ('Staged', 'Executing', 'Executed', 'Compensated', 'Ambiguous', 'Failed')),
+				target TEXT NOT NULL,
+				restore_artifact_id TEXT REFERENCES artifacts(id),
+				remove_target INTEGER NOT NULL CHECK (remove_target IN (0, 1)),
+				created_at_unix_nano INTEGER NOT NULL,
+				updated_at_unix_nano INTEGER NOT NULL,
+				CHECK ((remove_target = 1 AND restore_artifact_id IS NULL) OR (remove_target = 0 AND restore_artifact_id IS NOT NULL))
+			) STRICT`,
+			`CREATE INDEX compensations_status_idx ON compensations(status)`,
+			`CREATE TABLE compensation_evidence (
+				id TEXT PRIMARY KEY,
+				compensation_id TEXT NOT NULL REFERENCES compensations(id),
+				artifact_id TEXT NOT NULL REFERENCES artifacts(id),
+				kind TEXT NOT NULL,
+				source TEXT NOT NULL,
+				observed_at_unix_nano INTEGER NOT NULL
+			) STRICT`,
+			`CREATE INDEX compensation_evidence_idx ON compensation_evidence(compensation_id)`,
+			`CREATE TABLE compensation_verifications (
+				id TEXT PRIMARY KEY,
+				compensation_id TEXT NOT NULL REFERENCES compensations(id),
+				evidence_id TEXT NOT NULL REFERENCES compensation_evidence(id),
+				method TEXT NOT NULL,
+				status TEXT NOT NULL CHECK (status IN ('Passed', 'Failed')),
+				observed_at_unix_nano INTEGER NOT NULL
+			) STRICT`,
+			`CREATE INDEX compensation_verifications_idx ON compensation_verifications(compensation_id)`,
 		},
 	},
 }

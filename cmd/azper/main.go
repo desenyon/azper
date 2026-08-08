@@ -41,12 +41,82 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		return runFile(ctx, args[1:], stdout)
 	case "recover":
 		return runRecover(ctx, args[1:], stdout)
+	case "undo":
+		return runUndo(ctx, args[1:], stdout)
 	case "help", "-h", "--help":
 		_, err := fmt.Fprint(stdout, usage)
 		return err
 	default:
 		return fmt.Errorf("unknown command %q\n%s", args[0], usage)
 	}
+}
+
+func runUndo(ctx context.Context, args []string, stdout io.Writer) error {
+	dbPath, effectID, err := parseIdentifierFlags("undo", args)
+	if err != nil {
+		return err
+	}
+	return withStore(ctx, dbPath, func(store *sqlite.Store) error {
+		result, err := executeUndo(ctx, store, effectID)
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, result)
+	})
+}
+
+type undoResult struct {
+	Compensation domain.Compensation             `json:"compensation"`
+	Verification domain.CompensationVerification `json:"verification"`
+}
+
+func executeUndo(ctx context.Context, store *sqlite.Store, effectID string) (undoResult, error) {
+	engine, err := kernel.NewFileCompensationEngine(store, "cli")
+	if err != nil {
+		return undoResult{}, err
+	}
+	verifier, err := kernel.NewFileCompensationVerifier(store)
+	if err != nil {
+		return undoResult{}, err
+	}
+	compensation, err := store.CompensationForEffect(ctx, effectID)
+	if fault.IsCategory(err, fault.NotFound) {
+		effect, effectErr := store.Effect(ctx, effectID)
+		if effectErr != nil {
+			return undoResult{}, effectErr
+		}
+		if effect.Status != domain.EffectCommitted {
+			return undoResult{}, fault.New("undo", fault.Conflict, fmt.Errorf("effect %q is %s, not Committed", effect.ID, effect.Status))
+		}
+		originalGrant, grantErr := store.CapabilityGrant(ctx, effect.CapabilityGrantID)
+		if grantErr != nil {
+			return undoResult{}, grantErr
+		}
+		now := time.Now().UTC()
+		grant, grantErr := domain.NewCapabilityGrant(effect.RunID, "cli", domain.FilesystemWriteCapability, originalGrant.Scope,
+			domain.EffectReversibleWrite, "explicit owner CLI undo command", now, now.Add(15*time.Minute))
+		if grantErr != nil {
+			return undoResult{}, grantErr
+		}
+		if grantErr := store.GrantCapability(ctx, grant); grantErr != nil {
+			return undoResult{}, grantErr
+		}
+		compensation, _, err = engine.Stage(ctx, effect.ID, grant.ID)
+	}
+	if err != nil {
+		return undoResult{}, err
+	}
+	if compensation.Status == domain.CompensationStaged || compensation.Status == domain.CompensationExecuting {
+		compensation, err = engine.Execute(ctx, compensation.ID)
+		if err != nil {
+			return undoResult{}, err
+		}
+	}
+	verified, verification, err := verifier.Verify(ctx, compensation.ID)
+	if err != nil {
+		return undoResult{}, err
+	}
+	return undoResult{Compensation: verified, Verification: verification}, nil
 }
 
 func runRecover(ctx context.Context, args []string, stdout io.Writer) error {
@@ -384,5 +454,6 @@ Usage:
   azper run show [--db PATH] RUN_ID
   azper trace [--db PATH] AGGREGATE_ID
   azper file write [--db PATH] --run RUN_ID --scope DIR --path FILE --content TEXT --idempotency-key KEY
+  azper undo [--db PATH] EFFECT_ID
   azper recover [--db PATH]
 `

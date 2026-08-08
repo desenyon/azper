@@ -132,6 +132,32 @@ func TestCLIFileWriteCommitsOnlyAfterIndependentVerification(t *testing.T) {
 	if err := run(ctx, changed, &bytes.Buffer{}); err == nil {
 		t.Fatal("expected changed idempotent request to fail")
 	}
+
+	output.Reset()
+	if err := run(ctx, []string{"undo", "--db", dbPath, firstID}, &output); err != nil {
+		t.Fatalf("undo committed effect: %v", err)
+	}
+	var undone undoResult
+	if err := json.Unmarshal(output.Bytes(), &undone); err != nil {
+		t.Fatal(err)
+	}
+	if undone.Compensation.Status != domain.CompensationCompensated || undone.Verification.Status != domain.VerificationPassed {
+		t.Fatalf("compensation = %s verification = %s", undone.Compensation.Status, undone.Verification.Status)
+	}
+	if _, err := os.Stat(filepath.Join(scope, "output.txt")); !os.IsNotExist(err) {
+		t.Fatalf("undo did not remove newly created file: %v", err)
+	}
+	firstCompensationID := undone.Compensation.ID
+	output.Reset()
+	if err := run(ctx, []string{"undo", "--db", dbPath, firstID}, &output); err != nil {
+		t.Fatalf("idempotent undo retry: %v", err)
+	}
+	if err := json.Unmarshal(output.Bytes(), &undone); err != nil {
+		t.Fatal(err)
+	}
+	if undone.Compensation.ID != firstCompensationID {
+		t.Fatalf("undo retry created compensation %q, want %q", undone.Compensation.ID, firstCompensationID)
+	}
 }
 
 func TestCLIRecoverReportsEmptyQueue(t *testing.T) {

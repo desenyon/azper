@@ -293,6 +293,22 @@ func TestVerifierRejectsDriftAfterExecution(t *testing.T) {
 	}
 }
 
+func TestCommittedEffectRetryDetectsLaterDrift(t *testing.T) {
+	h := newFileHarness(t, stringPointer("before"))
+	defer h.close(t)
+	effect := commitHarnessEffect(t, h)
+	if err := os.WriteFile(h.target, []byte("later drift"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	persisted, verification, err := h.verifier.Verify(context.Background(), effect.ID)
+	if !fault.IsCategory(err, fault.Conflict) {
+		t.Fatalf("recheck error = %v, want conflict", err)
+	}
+	if persisted.Status != domain.EffectCommitted || verification.Status != domain.VerificationPassed {
+		t.Fatalf("historical state changed: effect=%s verification=%s", persisted.Status, verification.Status)
+	}
+}
+
 func TestCancelledExecutionDoesNotMutateTarget(t *testing.T) {
 	h := newFileHarness(t, stringPointer("before"))
 	defer h.close(t)
