@@ -1,74 +1,79 @@
 # Azper
 
-Azper is a local-first adaptive execution runtime. The current implementation is its durable foundation: typed Contracts, Runs, and validated PlanIR persisted in SQLite with an attributable event log.
+Azper is a terminal-native coding-agent harness built on [Pi](https://pi.dev). It keeps Pi's model runtime, tools, skills, extensions, project context, persistent sessions, steering, retries, and compaction while adding a focused interface and a host-side approval boundary.
 
-It is intentionally not yet an autonomous execution engine. Effects, Evidence, Verification, recovery, capabilities, model routing, memory, and the TUI remain future slices.
+The visual language is adapted from [brainless](https://brainless.swerdlow.dev): Grok-style sessions, messages, thinking, and permissions; Codex-style command execution; and Claude-style diffs. Brainless itself renders DOM/Tailwind components, so a real terminal cannot import those components directly. Azper implements those patterns with Pi's own `@earendil-works/pi-tui` renderer instead of shipping a browser or drawing a fake terminal in HTML.
 
-## Try the verified path
+## Run
 
-Build the CLI:
+Requirements: Node.js 22+ and an existing Pi login or API-key configuration.
 
-```sh
-go build -o azper ./cmd/azper
+```bash
+npm install
+npm run build
+npm link
+azper
 ```
 
-Create a Contract in a local database:
+For development:
 
-```sh
-./azper contract create \
-  --db ./azper.db \
-  --objective "Persist a durable execution request" \
-  --success "The contract can be read after restart"
+```bash
+npm run dev
+npm run dev -- --cwd /absolute/path/to/project --mode plan
 ```
 
-Copy the returned `id`, then start and inspect a Run:
+Azper continues the most recent Pi session for the workspace by default. Pass `--new` for a clean session.
 
-```sh
-./azper contract show --db ./azper.db CONTRACT_ID
-./azper run start --db ./azper.db CONTRACT_ID
-./azper run show --db ./azper.db RUN_ID
-./azper trace --db ./azper.db RUN_ID
+## Terminal controls
+
+| Input | Action |
+| --- | --- |
+| `Enter` | Send prompt, or queue a follow-up while Pi is running |
+| `Shift+Enter` | Add a newline |
+| `Shift+Tab` | Cycle review → plan → auto → full |
+| `Ctrl+T` | Cycle the active model's thinking level |
+| `Ctrl+K` | Compact context while preserving decisions and evidence |
+| `Ctrl+N` | Start a clean session |
+| `Ctrl+C` | Abort the active turn; exit when idle |
+| `Ctrl+Q` | Exit safely |
+| `Ctrl+Shift+F` | Search the transcript |
+
+Slash commands: `/help`, `/mode`, `/models`, `/model`, `/thinking`, `/new`, `/compact`, and `/quit`.
+
+When Azper requests tool approval, press `y` to allow once, `a` to allow that tool for the session, or `n`/`Esc` to reject.
+
+## Modes
+
+| Mode | Tool behavior |
+| --- | --- |
+| Review | Read-only inspection runs directly; mutations require approval. |
+| Plan | Only read, grep, find, and list tools are active. |
+| Auto | Ordinary workspace work runs directly; high-impact commands require approval. |
+| Full | Workspace tools run without approval prompts. Use only in trusted projects. |
+
+Writes outside the workspace and writes to protected paths such as `.git`, `.env`, `node_modules`, `.ssh`, and Pi's auth file are blocked in every mode. Pi does not provide an OS sandbox, so use a container or VM for untrusted code.
+
+## Harness tuning
+
+- Persistent, workspace-specific sessions with one-at-a-time steering and follow-up queues.
+- Automatic context compaction with a 16k-token reserve and 20k recent-token window.
+- Three retries with bounded backoff for transient model failures.
+- Pi's normal resource loader, so project instructions, skills, prompt files, and extensions still work.
+- A concise execution prompt emphasizing acceptance criteria, minimal changes, repository rules, real evidence, proportional verification, and truthful completion reporting.
+- A pre-tool extension that enforces modes and pauses the agent while terminal approval is pending.
+
+## Development
+
+```bash
+npm run lint
+npm test
+npm run build
+npm run check
 ```
 
-Execute one governed local file write from that Run:
+Core modules:
 
-```sh
-mkdir -p ./azper-output
-./azper file write \
-  --db ./azper.db \
-  --run RUN_ID \
-  --scope ./azper-output \
-  --path result.txt \
-  --content "verified bytes" \
-  --idempotency-key result-v1
-```
-
-This explicit command creates validated PlanIR, issues a 15-minute Run-bound `filesystem.write` grant scoped to `./azper-output`, stages the previous file as a content-addressed Artifact, performs an atomic replacement, records executor Evidence, and independently reads and hashes the target before the Verifier commits the Effect. Repeating the same key and inputs returns the same Effect; changing the content under that key is rejected.
-
-After an interrupted process, reconcile all durable `Executing` Effects owned by the CLI worker:
-
-```sh
-./azper recover --db ./azper.db
-```
-
-Recovery commits Effects whose desired state can be proven, safely resumes still-authorized writes whose previous state is unchanged, and reports expired or ambiguous work under `needs_attention`.
-
-Expected behavior:
-
-- Contract creation returns a `ctr_...` identifier and writes one `ContractCreated` event atomically.
-- Run creation returns a `run_...` identifier in `Running` state and writes one `RunStarted` event atomically.
-- `show` and `trace` still return the persisted objects after another process opens the database.
-- A Run cannot start for a missing Contract.
-- A file Effect reports `Committed` only after independent BLAKE3-256 verification.
-
-The Run remains `Running`: Contract-level success evaluation and Run completion are not implemented, so the file Effect cannot claim the broader Contract is complete.
-
-## Validate
-
-```sh
-go test ./...
-go test -race ./...
-go vet ./...
-```
-
-See [docs/ENGINEERING_STATE.md](docs/ENGINEERING_STATE.md) for the evidence-backed subsystem status and [docs/ROADMAP.md](docs/ROADMAP.md) for the next vertical slices.
+- `src/harness.ts` owns the Pi runtime, settings, persistence, and pre-tool guardrail.
+- `src/policy.ts` classifies tool calls before execution.
+- `src/ui/app.ts` owns terminal layout, input, commands, and approval interaction.
+- `src/ui/components.ts` renders the brainless-inspired terminal components.
