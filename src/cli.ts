@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { HarnessMode } from "./types.js";
 import { TerminalApp } from "./ui/app.js";
 
@@ -67,7 +67,16 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   await app.run();
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+export function isMainModule(moduleUrl: string, entryPath: string | undefined): boolean {
+  if (!entryPath) return false;
+  try {
+    return fs.realpathSync(fileURLToPath(moduleUrl)) === fs.realpathSync(entryPath);
+  } catch {
+    return moduleUrl === pathToFileURL(entryPath).href;
+  }
+}
+
+if (isMainModule(import.meta.url, process.argv[1])) {
   main().catch((error: unknown) => {
     console.error(`azper: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
